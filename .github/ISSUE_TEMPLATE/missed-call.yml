@@ -1,0 +1,19 @@
+name: 부재중 전화 (리드)
+description: 부재중 전화를 등록하면 발신자에게 예약 링크 문자를 자동 발송합니다
+title: "부재중: "
+labels: ["type:missed-call"]
+body:
+  - type: input
+    id: tenant
+    attributes:
+      label: 업체 키
+      placeholder: demo
+    validations:
+      required: true
+  - type: input
+    id: caller
+    attributes:
+      label: 발신 번호
+      placeholder: "+821012345678"
+    validations:
+      required: true

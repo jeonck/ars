@@ -1,0 +1,12 @@
+{
+  "demo": {
+    "key": "demo",
+    "name": "든든 지붕 시공",
+    "owner_phone": "+821000000000",
+    "timezone": "Asia/Seoul",
+    "services": ["지붕 누수 점검", "지붕 교체 견적", "방수 시공 상담"],
+    "sms_template": "[{business}] 방금 전화를 받지 못해 죄송합니다. 현장 작업 중이라 통화가 어려웠습니다. 아래 링크에서 편하신 상담 시간을 예약해 주세요:\n{link}",
+    "reminder_hours": 3,
+    "pages_base_url": "https://jeonck.github.io/ars/book.html"
+  }
+}

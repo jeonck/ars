@@ -183,6 +183,44 @@ test/
 - **지난 시간 필터** — 슬롯 계산은 업체 타임존 기준 현재 시각과 비교하여 과거 시간을 제외.
 - **개인정보** — 발신번호는 예약 링크 토큰으로만 연결되며, 공개 API는 최소 정보만 노출.
 
+## GitHub 네이티브 (서버리스) 옵션 — PoC
+
+"상시 서버 없이 GitHub만으로" 운영하는 방식의 개념 증명입니다.
+**GitHub Issues를 DB로, GitHub Actions를 처리 엔진으로** 사용합니다.
+
+### 구성
+```
+config/tenants.json          업체 설정(이름·템플릿·상담항목·리마인더시간) — DB 대신 git 파일
+.github/ISSUE_TEMPLATE/       예약·부재중 이슈 폼(구조화 입력)
+scripts/lib/issueops.mjs      순수 처리 로직(파싱·플랜) — 단위 테스트 대상
+scripts/issue-ops.mjs         이슈 이벤트 처리(문자 발송 + 라벨 + 코멘트)
+scripts/reminders-gh.mjs      확정 예약 스캔 후 리마인더 발송
+scripts/create-missed-call.mjs  repository_dispatch → 부재중 이슈 생성
+.github/workflows/            issue-ops.yml (on: issues), reminders.yml (on: schedule)
+```
+
+### 흐름
+1. **예약** — 고객이 `상담 예약 요청` 이슈 폼 제출 → `issue-ops` 워크플로가 확정 문자(고객+사장님) 발송, `booking:confirmed` 라벨, 요약 코멘트.
+2. **부재중** — `부재중 전화` 이슈 폼 또는 `repository_dispatch(missed_call)` → 발신자에게 예약 링크 문자, `lead:texted` 라벨.
+3. **리마인더** — `reminders` 워크플로(크론)가 확정 예약을 스캔해 예약 `reminder_hours`시간 전 문자 발송(`reminded` 라벨로 1회만).
+
+### 켜는 법
+- **문자 실발송** — 저장소 Secrets에 `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/`TWILIO_FROM` 등록(없으면 mock: Actions 로그·코멘트에만 기록).
+- **예약 페이지** — `public/book.html`을 GitHub Pages로 배포하고 `config/tenants.json`의 `pages_base_url` 갱신.
+- **인증** — 처리에는 Actions 기본 `GITHUB_TOKEN` 사용(브라우저에 토큰 노출 금지).
+
+### 로컬 dry-run (네트워크 없이 처리 미리보기)
+```bash
+DRY_RUN=1 GITHUB_REPOSITORY=owner/repo GITHUB_EVENT_PATH=event.json node scripts/issue-ops.mjs
+```
+
+### ⚠️ 한계 (정직하게)
+- **전화/문자 수신 엔드포인트는 GitHub가 대체 불가.** Twilio 인바운드 웹훅을 받을 초경량 서버리스(예: Cloudflare Workers 무료) 또는 사장님 폰 자동화(→ `repository_dispatch`)가 필요합니다.
+- **지연** — Actions 큐·콜드스타트로 수십 초, 스케줄 크론은 수 분 지연/누락 가능(리마인더엔 무방, "즉시 응답"엔 불리).
+- **개인정보** — 고객 전화번호가 이슈에 쌓이므로 **반드시 private 저장소**로 운영하세요.
+
+> 정리: 예약 페이지·저장·처리·리마인더는 GitHub로 옮길 수 있고, **딱 "전화 수신" 한 조각만** 외부 트리거가 필요합니다.
+
 ## 라이선스
 
 MIT

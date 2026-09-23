@@ -1,0 +1,49 @@
+name: 상담 예약 요청
+description: 고객 상담 예약을 접수합니다 (자동으로 확정 문자 발송)
+title: "[예약] "
+labels: ["type:booking"]
+body:
+  - type: input
+    id: tenant
+    attributes:
+      label: 업체 키
+      description: 예약 대상 업체의 키 (예 - demo)
+      placeholder: demo
+    validations:
+      required: true
+  - type: input
+    id: name
+    attributes:
+      label: 이름
+      placeholder: 홍길동
+    validations:
+      required: true
+  - type: input
+    id: phone
+    attributes:
+      label: 연락처
+      placeholder: 010-1234-5678
+    validations:
+      required: true
+  - type: input
+    id: service
+    attributes:
+      label: 상담 항목
+      placeholder: 지붕 누수 점검
+    validations:
+      required: false
+  - type: input
+    id: slot
+    attributes:
+      label: 희망 일시
+      description: "YYYY-MM-DD HH:MM 형식 (예 - 2026-09-25 10:00)"
+      placeholder: "2026-09-25 10:00"
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: 요청사항
+      placeholder: 예 - 지붕 누수가 심합니다
+    validations:
+      required: false

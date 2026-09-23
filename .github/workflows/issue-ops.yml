@@ -1,0 +1,35 @@
+name: ARS issue-ops
+
+# Processes booking / missed-call issues: sends SMS (Twilio or mock),
+# labels the issue, and posts a summary comment.
+on:
+  issues:
+    types: [opened, edited]
+  repository_dispatch:
+    types: [missed_call]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Create missed-call issue (repository_dispatch)
+        if: ${{ github.event_name == 'repository_dispatch' }}
+        run: node scripts/create-missed-call.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Process issue
+        if: ${{ github.event_name == 'issues' }}
+        run: node scripts/issue-ops.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_FROM: ${{ secrets.TWILIO_FROM }}

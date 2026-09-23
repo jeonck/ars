@@ -1,10 +1,9 @@
 import { config, smsLive } from './config.js';
 import { logMessage } from './db.js';
+import { renderTemplate } from './template.js';
 
-// Render an SMS template. Supported placeholders: {business}, {link}, {caller}.
-export function renderTemplate(template, vars) {
-  return template.replace(/\{(business|link|caller)\}/g, (_, k) => vars[k] ?? '');
-}
+// Re-exported for callers that import it from here.
+export { renderTemplate };
 
 async function sendViaTwilio(to, body) {
   const url = `https://api.twilio.com/2010-04-01/Accounts/${config.twilio.sid}/Messages.json`;
