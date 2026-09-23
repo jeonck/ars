@@ -10,12 +10,14 @@ import {
   createTenant,
   updateTenant,
   getLeadByToken,
+  getBookingByManageToken,
   listLeads,
   listBookings,
   listMessages,
 } from './db.js';
 import { availableSlots, upcomingOpenDates } from './slots.js';
-import { handleMissedCall, bookSlot } from './core.js';
+import { handleMissedCall, bookSlot, cancelBooking, rescheduleBooking, handleInboundSms } from './core.js';
+import { startReminderLoop } from './reminders.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, '..', 'public');
@@ -144,6 +146,59 @@ route('POST', '/api/:key/bookings', async (req, res, p) => {
   }
 });
 
+// Booking lookup by manage token (for the cancel/reschedule page).
+route('GET', '/api/:key/booking', (req, res, p) => {
+  const t = getTenantByKey(p.key);
+  if (!t) return notFound(res);
+  const token = new URL(req.url, 'http://x').searchParams.get('b');
+  const b = getBookingByManageToken(token);
+  if (!b || b.tenant_id !== t.id) return notFound(res);
+  sendJson(res, 200, {
+    tenant: publicTenant(t),
+    booking: {
+      name: b.name, phone: b.phone, service: b.service,
+      slot_start: b.slot_start, slot_end: b.slot_end, status: b.status,
+    },
+  });
+});
+
+route('POST', '/api/:key/bookings/cancel', async (req, res, p) => {
+  const t = getTenantByKey(p.key);
+  if (!t) return notFound(res);
+  const body = await readBody(req);
+  try {
+    const booking = await cancelBooking(t, body.b || body.token);
+    sendJson(res, 200, { ok: true, booking });
+  } catch (err) {
+    sendJson(res, err.code ? 400 : 500, { error: err.code || 'server_error', message: err.message });
+  }
+});
+
+route('POST', '/api/:key/bookings/reschedule', async (req, res, p) => {
+  const t = getTenantByKey(p.key);
+  if (!t) return notFound(res);
+  const body = await readBody(req);
+  try {
+    const booking = await rescheduleBooking(t, body.b || body.token, (body.slot_start || '').trim());
+    sendJson(res, 200, { ok: true, booking });
+  } catch (err) {
+    sendJson(res, err.code ? 400 : 500, { error: err.code || 'server_error', message: err.message });
+  }
+});
+
+// Inbound SMS webhook (Twilio) — handles STOP/START opt-out keywords.
+route('POST', '/webhooks/sms/:key', async (req, res, p) => {
+  const t = getTenantByKey(p.key);
+  const body = await readBody(req);
+  const reply = (msg) =>
+    send(res, 200,
+      `<?xml version="1.0" encoding="UTF-8"?><Response>${msg ? `<Message>${msg.replace(/[<&]/g, (c) => ({ '<': '&lt;', '&': '&amp;' }[c]))}</Message>` : ''}</Response>`,
+      { 'Content-Type': 'text/xml; charset=utf-8' });
+  if (!t || !body.From) return reply('');
+  const result = await handleInboundSms(t, { from: body.From, body: body.Body || '' });
+  reply(result.reply);
+});
+
 // Demo helper: simulate a missed call without any phone system.
 route('POST', '/api/:key/simulate-missed-call', async (req, res, p) => {
   const t = getTenantByKey(p.key);
@@ -152,6 +207,9 @@ route('POST', '/api/:key/simulate-missed-call', async (req, res, p) => {
   const caller = (body.caller || '').trim();
   if (!caller) return sendJson(res, 400, { error: 'caller_required' });
   const result = await handleMissedCall(t, { caller, callSid: `SIM-${Date.now()}` });
+  if (result.skipped) {
+    return sendJson(res, 200, { ok: true, skipped: true, reason: result.reason });
+  }
   sendJson(res, 200, {
     ok: true,
     link: result.link,
@@ -231,6 +289,7 @@ route('GET', '/api/admin/:key/messages', (req, res, p) => {
 route('GET', '/', (req, res) => serveStatic(res, 'index.html'));
 route('GET', '/dashboard', (req, res) => serveStatic(res, 'dashboard.html'));
 route('GET', '/book/:key', (req, res) => serveStatic(res, 'book.html'));
+route('GET', '/manage/:key', (req, res) => serveStatic(res, 'manage.html'));
 
 // ── dispatcher ──────────────────────────────────────────────
 export const server = http.createServer(async (req, res) => {
@@ -258,6 +317,7 @@ export const server = http.createServer(async (req, res) => {
 // Start unless imported by tests.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   seedIfEmpty();
+  startReminderLoop();
   server.listen(config.port, () => {
     // eslint-disable-next-line no-console
     console.log(`ARS listening on ${config.baseUrl}  (SMS: ${smsLive ? 'Twilio' : 'mock'})`);

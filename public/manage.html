@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>예약 관리</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --line:#262a33; --fg:#e8eaed; --muted:#9aa0ab;
+    --accent:#4f8cff; --danger:#ff5c5c; --ok:#35c07f; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    background:var(--bg); color:var(--fg); }
+  .wrap { max-width:520px; margin:0 auto; padding:28px 18px 70px; }
+  h1 { font-size:22px; margin:0 0 16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; margin-bottom:16px; }
+  .kv { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line); font-size:15px; }
+  .kv:last-child { border-bottom:0; }
+  .kv .k { color:var(--muted); }
+  .row { display:flex; gap:10px; }
+  button { flex:1; border:0; border-radius:10px; padding:13px; font-size:15px; font-weight:600; cursor:pointer; }
+  .primary { background:var(--accent); color:#fff; }
+  .danger { background:transparent; border:1px solid var(--danger); color:var(--danger); }
+  .ghost { background:transparent; border:1px solid var(--line); color:var(--fg); }
+  .chips { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; margin-top:6px; }
+  .chip { white-space:nowrap; padding:9px 14px; border:1px solid var(--line); border-radius:999px; background:#12151b; cursor:pointer; font-size:14px; }
+  .chip.sel { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .slots { display:grid; grid-template-columns:repeat(auto-fill,minmax(86px,1fr)); gap:8px; margin-top:10px; }
+  .slot { text-align:center; padding:10px 6px; border:1px solid var(--line); border-radius:9px; background:#12151b; cursor:pointer; font-size:14px; }
+  .slot.sel { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .slot.none { grid-column:1/-1; color:var(--muted); }
+  .muted { color:var(--muted); font-size:13px; }
+  .err { color:var(--danger); font-size:14px; margin-top:10px; }
+  .badge { display:inline-block; font-size:12px; padding:3px 10px; border-radius:999px; }
+  .badge.confirmed { background:#123; color:var(--ok); border:1px solid var(--ok); }
+  .badge.cancelled { background:#301; color:var(--danger); border:1px solid var(--danger); }
+  .hide { display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="title">예약 관리</h1>
+  <div id="loading" class="muted">불러오는 중…</div>
+
+  <div id="view" class="hide">
+    <div class="card">
+      <div class="kv"><span class="k">업체</span><span id="v_biz"></span></div>
+      <div class="kv"><span class="k">예약자</span><span id="v_name"></span></div>
+      <div class="kv"><span class="k">일시</span><span id="v_slot"></span></div>
+      <div class="kv" id="v_svc_row"><span class="k">상담</span><span id="v_svc"></span></div>
+      <div class="kv"><span class="k">상태</span><span id="v_status"></span></div>
+    </div>
+
+    <div id="actions" class="row">
+      <button id="rescheduleBtn" class="primary">시간 변경</button>
+      <button id="cancelBtn" class="danger">예약 취소</button>
+    </div>
+
+    <div id="reschedule" class="card hide">
+      <b>새로운 시간 선택</b>
+      <div id="dates" class="chips"></div>
+      <div id="slots" class="slots"><div class="slot none">날짜를 선택하세요</div></div>
+      <div id="err" class="err"></div>
+      <div class="row" style="margin-top:14px">
+        <button id="confirmReschedule" class="primary" disabled>변경 확정</button>
+        <button id="cancelReschedule" class="ghost">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="done" class="card hide" style="text-align:center">
+    <div style="font-size:40px" id="doneIcon">✅</div>
+    <h2 id="doneTitle"></h2>
+    <p class="muted" id="doneMsg"></p>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const key = location.pathname.split('/')[2];
+const b = new URLSearchParams(location.search).get('b');
+let tenant = null, booking = null, selDate = null, selSlot = null;
+
+async function init() {
+  const res = await fetch(`/api/${key}/booking?b=${encodeURIComponent(b || '')}`);
+  if (!res.ok) { $('loading').textContent = '예약을 찾을 수 없습니다.'; return; }
+  const data = await res.json();
+  tenant = data.tenant; booking = data.booking;
+  $('loading').classList.add('hide'); $('view').classList.remove('hide');
+  render();
+}
+
+function render() {
+  $('v_biz').textContent = tenant.name;
+  $('v_name').textContent = booking.name;
+  $('v_slot').textContent = booking.slot_start;
+  if (booking.service) { $('v_svc').textContent = booking.service; }
+  else { $('v_svc_row').classList.add('hide'); }
+  const cancelled = booking.status === 'cancelled';
+  $('v_status').innerHTML = `<span class="badge ${booking.status}">${cancelled ? '취소됨' : '확정'}</span>`;
+  $('actions').classList.toggle('hide', cancelled);
+}
+
+$('cancelBtn').addEventListener('click', async () => {
+  if (!confirm('정말 예약을 취소하시겠어요?')) return;
+  try {
+    const res = await fetch(`/api/${key}/bookings/cancel`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ b }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || data.error);
+    showDone('🗑️', '예약이 취소되었습니다', '취소 확인 문자를 보내드렸습니다.');
+  } catch (e) { alert('오류: ' + e.message); }
+});
+
+$('rescheduleBtn').addEventListener('click', () => { $('reschedule').classList.remove('hide'); loadDates(); });
+$('cancelReschedule').addEventListener('click', () => $('reschedule').classList.add('hide'));
+
+async function loadDates() {
+  const { dates } = await (await fetch(`/api/${key}/open-dates`)).json();
+  $('dates').innerHTML = dates.map(d => `<div class="chip" data-d="${d}">${fmtDate(d)}</div>`).join('')
+    || '<span class="muted">가능한 날짜가 없습니다.</span>';
+  $('dates').querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => selectDate(c.dataset.d)));
+  if (dates[0]) selectDate(dates[0]);
+}
+function fmtDate(d) {
+  const [y,m,day] = d.split('-').map(Number);
+  const dow = ['일','월','화','수','목','금','토'][new Date(Date.UTC(y,m-1,day)).getUTCDay()];
+  return `${m}/${day}(${dow})`;
+}
+async function selectDate(d) {
+  selDate = d; selSlot = null; $('confirmReschedule').disabled = true;
+  $('dates').querySelectorAll('.chip').forEach(c => c.classList.toggle('sel', c.dataset.d===d));
+  const { slots } = await (await fetch(`/api/${key}/slots?date=${d}`)).json();
+  if (!slots.length) { $('slots').innerHTML = '<div class="slot none">가능한 시간이 없습니다</div>'; return; }
+  $('slots').innerHTML = slots.map(s => `<div class="slot" data-s="${s.start}">${s.label.split('–')[0]}</div>`).join('');
+  $('slots').querySelectorAll('.slot').forEach(el => el.addEventListener('click', () => {
+    selSlot = el.dataset.s;
+    $('slots').querySelectorAll('.slot').forEach(x => x.classList.remove('sel'));
+    el.classList.add('sel'); $('confirmReschedule').disabled = false;
+  }));
+}
+
+$('confirmReschedule').addEventListener('click', async () => {
+  $('err').textContent=''; $('confirmReschedule').disabled = true;
+  try {
+    const res = await fetch(`/api/${key}/bookings/reschedule`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ b, slot_start: selSlot }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || data.error);
+    showDone('🔄', '예약 시간이 변경되었습니다', `${selSlot} · 변경 확인 문자를 보내드렸습니다.`);
+  } catch (e) { $('err').textContent = '오류: ' + e.message; if (selDate) selectDate(selDate); }
+});
+
+function showDone(icon, title, msg) {
+  $('view').classList.add('hide'); $('done').classList.remove('hide');
+  $('doneIcon').textContent = icon; $('doneTitle').textContent = title; $('doneMsg').textContent = msg;
+}
+init();
+</script>
+</body>
+</html>

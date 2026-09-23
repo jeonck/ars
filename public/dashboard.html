@@ -169,6 +169,10 @@ async function renderSettings(p) {
       <div style="flex:1"><label>슬롯 길이(분)</label><input id="s_slot" type="number" value="${tenant.slot_minutes}" /></div>
       <div style="flex:2"><label>타임존</label><input id="s_tz" value="${esc(tenant.timezone)}" /></div>
     </div>
+    <div class="row">
+      <div style="flex:1"><label>리마인더 (예약 N시간 전)</label><input id="s_remind" type="number" value="${tenant.reminder_hours}" /></div>
+      <div style="flex:1"><label>재문자 방지 (분)</label><input id="s_cool" type="number" value="${tenant.cooldown_minutes}" /></div>
+    </div>
     <label>상담 항목 (쉼표로 구분)</label><input id="s_svc" value="${esc(tenant.services.join(', '))}" />
     <label>자동 문자 템플릿 <span class="muted">— {business}, {link} 사용 가능</span></label>
     <textarea id="s_tpl" rows="4">${esc(tenant.sms_template)}</textarea>
@@ -204,6 +208,7 @@ async function renderSettings(p) {
     const patch = {
       name: $('s_name').value, owner_phone: $('s_owner').value,
       slot_minutes: Number($('s_slot').value), timezone: $('s_tz').value,
+      reminder_hours: Number($('s_remind').value), cooldown_minutes: Number($('s_cool').value),
       services: $('s_svc').value.split(',').map(s=>s.trim()).filter(Boolean),
       sms_template: $('s_tpl').value, business_hours,
     };

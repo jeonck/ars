@@ -10,6 +10,7 @@
 - **의존성 0** — Node.js 22의 내장 모듈만 사용 (`node:http`, `node:sqlite`, 내장 `fetch`). `npm install` 불필요.
 - **바로 데모 가능** — Twilio 없이도 `mock` 모드로 전체 흐름이 동작(문자를 콘솔·DB에 기록).
 - **실서비스 전환** — Twilio 환경변수만 넣으면 실제 SMS 발송으로 자동 전환.
+- **예약 취소/변경, 리마인더 문자, 스팸 방지·수신거부(STOP)** 기능 내장 — 아래 [추가 기능](#추가-기능) 참고.
 
 ---
 
@@ -52,6 +53,7 @@ node --env-file=.env src/server.js
 |---|---|---|
 | 랜딩 + 라이브 데모 | <http://localhost:3000/> | 부재중 전화를 시뮬레이션해 문자·링크 확인 |
 | 예약 페이지(데모) | <http://localhost:3000/book/demo> | 고객이 보는 예약 화면 |
+| 예약 관리(취소/변경) | `/manage/:key?b=관리토큰` | 확정 문자 링크로 접속하는 취소·변경 화면 |
 | 관리자 대시보드 | <http://localhost:3000/dashboard> | 업체·예약·리드·문자·설정 관리 |
 
 첫 실행 시 데모 업체(`key=demo`, `든든 지붕 시공`)가 자동 생성됩니다.
@@ -99,6 +101,10 @@ POST https://your-public-domain.com/webhooks/voice/<업체키>
 | GET | `/api/:key/slots?date=YYYY-MM-DD` | 해당 날짜의 예약 가능 시간대 |
 | GET | `/api/:key/lead?t=토큰` | 링크 토큰으로 발신번호 조회(폼 자동입력용) |
 | POST | `/api/:key/bookings` | 예약 생성 `{ token?, name, phone, service?, slot_start, notes? }` |
+| GET | `/api/:key/booking?b=관리토큰` | 관리 토큰으로 예약 조회(취소/변경 화면용) |
+| POST | `/api/:key/bookings/cancel` | 예약 취소 `{ b: 관리토큰 }` |
+| POST | `/api/:key/bookings/reschedule` | 예약 시간 변경 `{ b: 관리토큰, slot_start }` |
+| POST | `/webhooks/sms/:key` | Twilio 인바운드 SMS 콜백. STOP/START 등 수신거부·재수신 처리 |
 
 ### 관리자 (`x-admin-token` 헤더 또는 `?admin_token=`)
 | 메서드 | 경로 | 설명 |
@@ -120,8 +126,31 @@ POST https://your-public-domain.com/webhooks/voice/<업체키>
 - **services** — 상담 항목 목록(예약 페이지 드롭다운)
 - **owner_phone** — 신규 예약 시 사장님에게 알림 문자를 보낼 번호
 - **timezone** — 영업시간·"지난 시간" 판정 기준 IANA 타임존(기본 `Asia/Seoul`)
+- **reminder_hours** — 예약 시각 몇 시간 전에 리마인더 문자를 보낼지(기본 3시간)
+- **cooldown_minutes** — 같은 번호에 자동 문자를 다시 보내지 않는 최소 간격(기본 60분)
 
 모두 관리자 대시보드의 **⚙️ 설정** 탭에서 편집할 수 있습니다.
+
+---
+
+## 추가 기능
+
+### ① 예약 취소/변경
+- 예약 확정 문자에 **관리 링크**(`/manage/:key?b=관리토큰`)가 포함됩니다.
+- 고객이 링크에서 직접 **취소**하거나 **다른 시간으로 변경**할 수 있고, 변경·취소 시 고객·사장님 양쪽에 알림 문자가 갑니다.
+- 취소하면 해당 시간대가 다시 예약 가능 상태로 풀립니다.
+
+### ② 리마인더 문자
+- 서버가 1분마다 예약을 점검해, **예약 시각 `reminder_hours`시간 전**에 리마인더 문자를 자동 발송합니다.
+- 각 예약당 한 번만 발송(중복 방지). 예약을 변경하면 리마인더가 다시 예약됩니다.
+- 인프로세스 스케줄러이므로 서버가 떠 있는 동안 동작합니다(별도 크론 불필요).
+
+### ③ 중복발송 방지 + 수신거부(STOP)
+- **쿨다운** — 같은 번호에서 `cooldown_minutes` 이내에 부재중 전화가 반복돼도 자동 문자를 다시 보내지 않습니다.
+- **수신거부** — 고객이 `STOP`(또는 `수신거부`, `구독취소`, `그만` 등)으로 회신하면 이후 문자를 보내지 않습니다.
+  `START`(또는 `수신동의`, `시작`)로 다시 켤 수 있습니다.
+  Twilio 번호의 **인바운드 메시지 콜백**을 `POST /webhooks/sms/:key`로 지정하세요.
+- 수신거부한 고객에게는 예약 확정·리마인더 문자도 나가지 않지만, **사장님 알림은 정상 발송**됩니다.
 
 ---
 
@@ -133,20 +162,24 @@ src/
   db.js       node:sqlite 스키마 + 데이터 액세스 + 데모 시드
   slots.js    영업시간·예약 기반 가용 시간대 계산(타임존 인지)
   sms.js      SMS 발송 추상화(Twilio / mock) + 템플릿 렌더링
-  core.js     핵심 로직: 부재중 처리, 예약 생성·검증
+  core.js     핵심 로직: 부재중 처리, 예약 생성·검증·취소·변경, 리마인더, 수신거부
+  reminders.js 예약 리마인더 스케줄러(인프로세스 루프)
   server.js   내장 http 서버 + 라우터 + 정적 페이지
 public/
   index.html      랜딩 + 라이브 데모
   book.html       고객 예약 페이지
+  manage.html     예약 취소/변경 페이지
   dashboard.html  관리자 대시보드
 test/
-  flow.test.js    node:test 통합 테스트
+  flow.test.js         node:test 통합 테스트(기본 흐름)
+  improvements.test.js 취소/변경·리마인더·수신거부·쿨다운 테스트
 ```
 
 ## 설계 메모
 
-- **동시 예약 방지** — `bookings` 테이블에 `UNIQUE(tenant_id, slot_start, status)` 제약을 두어,
+- **동시 예약 방지** — `bookings`에 `status='confirmed'` 부분 유니크 인덱스를 두어,
   같은 시간대 중복 예약을 DB 레벨에서 차단(경합 시 사용자 친화적 오류 반환).
+  취소된 예약은 인덱스 대상이 아니므로 같은 시간대를 다시 예약할 수 있습니다.
 - **지난 시간 필터** — 슬롯 계산은 업체 타임존 기준 현재 시각과 비교하여 과거 시간을 제외.
 - **개인정보** — 발신번호는 예약 링크 토큰으로만 연결되며, 공개 API는 최소 정보만 노출.
 

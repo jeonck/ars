@@ -66,6 +66,26 @@ export function availableSlots(tenant, dateStr) {
   return slots;
 }
 
+// Add N hours to a "YYYY-MM-DD HH:MM" wall-clock string (handles day rollover).
+export function addHoursLocal(localStr, hours) {
+  const [d, t] = localStr.split(' ');
+  const [y, mo, da] = d.split('-').map(Number);
+  const [h, mi] = t.split(':').map(Number);
+  const dt = new Date(Date.UTC(y, mo - 1, da, h + hours, mi));
+  return (
+    `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())} ` +
+    `${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}`
+  );
+}
+
+// End time of a slot starting at slotStart with the given length in minutes.
+export function slotEndFor(slotStart, minutes) {
+  const [d, hm] = slotStart.split(' ');
+  const [h, m] = hm.split(':').map(Number);
+  const tot = h * 60 + m + minutes;
+  return `${d} ${pad(Math.floor(tot / 60))}:${pad(tot % 60)}`;
+}
+
 // Validate that a proposed slot_start is genuinely bookable right now.
 export function isSlotBookable(tenant, slotStart) {
   const dateStr = slotStart.slice(0, 10);

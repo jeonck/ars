@@ -96,6 +96,14 @@ $('simulate').addEventListener('click', async () => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || '실패');
+    if (data.skipped) {
+      const why = data.reason === 'cooldown' ? '재문자 방지 시간(쿨다운) 내라 문자를 보내지 않았습니다.'
+        : data.reason === 'opt_out' ? '수신거부한 번호라 문자를 보내지 않았습니다.' : '문자를 보내지 않았습니다.';
+      $('bubble').textContent = '⏸ ' + why;
+      $('bookLink').textContent = ''; $('bookLink').removeAttribute('href');
+      $('out').classList.add('show');
+      return;
+    }
     $('bubble').textContent = data.body;
     $('bookLink').textContent = data.link;
     $('bookLink').href = data.link;
