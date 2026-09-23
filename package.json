@@ -1,0 +1,24 @@
+{
+  "name": "ars",
+  "version": "1.0.0",
+  "description": "범용 자동 상담 예약링크 발송 시스템 — 부재중 전화가 오면 자동으로 상담 예약 링크 문자를 보내주는 멀티테넌트 시스템 (missed call -> auto SMS booking link).",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "missed-call",
+    "sms",
+    "booking",
+    "twilio",
+    "lead-capture",
+    "appointment",
+    "multi-tenant"
+  ],
+  "license": "MIT"
+}

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ARS 관리자 대시보드</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --line:#262a33; --fg:#e8eaed; --muted:#9aa0ab;
+    --accent:#4f8cff; --ok:#35c07f; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    background:var(--bg); color:var(--fg); }
+  .wrap { max-width:940px; margin:0 auto; padding:24px 18px 80px; }
+  h1 { font-size:22px; } h2 { font-size:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:16px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 6px; }
+  input, select, textarea { width:100%; background:#12151b; border:1px solid var(--line); color:var(--fg);
+    border-radius:8px; padding:10px; font-size:14px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:10px 16px;
+    font-size:14px; font-weight:600; cursor:pointer; }
+  button.sec { background:transparent; border:1px solid var(--line); color:var(--fg); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  .row > * { flex:1; min-width:140px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; }
+  .tabs { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+  .tab { padding:8px 14px; border:1px solid var(--line); border-radius:999px; cursor:pointer; font-size:14px; }
+  .tab.sel { background:var(--accent); border-color:var(--accent); }
+  .pill { font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); }
+  .hide { display:none; }
+  .muted { color:var(--muted); font-size:13px; }
+  code { background:#12151b; padding:2px 6px; border-radius:5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ARS 관리자 대시보드</h1>
+
+  <div class="card" id="login">
+    <label>관리자 토큰 (ADMIN_TOKEN)</label>
+    <div class="row">
+      <input id="token" type="password" placeholder="관리자 토큰 입력" />
+      <button id="loginBtn" style="flex:0 0 auto">접속</button>
+    </div>
+    <p class="muted">기본값은 <code>.env</code>의 <code>ADMIN_TOKEN</code> 입니다 (미설정 시 <code>dev-admin-token</code>).</p>
+  </div>
+
+  <div id="app" class="hide">
+    <div class="card">
+      <div class="row">
+        <div style="flex:2">
+          <label>업체 선택</label>
+          <select id="tenantSel"></select>
+        </div>
+        <button id="newBtn" class="sec" style="flex:0 0 auto">+ 새 업체</button>
+      </div>
+      <p class="muted" style="margin-top:10px">
+        예약 링크: <code id="bookUrl"></code> ·
+        Twilio 콜백: <code id="hookUrl"></code>
+      </p>
+    </div>
+
+    <div class="tabs">
+      <div class="tab sel" data-t="bookings">📅 예약</div>
+      <div class="tab" data-t="leads">📞 부재중/리드</div>
+      <div class="tab" data-t="messages">💬 발송 문자</div>
+      <div class="tab" data-t="settings">⚙️ 설정</div>
+    </div>
+
+    <div id="panel" class="card"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let token = '', tenants = [], cur = null, tab = 'bookings';
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { ...opts,
+    headers: { 'Content-Type':'application/json', 'x-admin-token': token, ...(opts.headers||{}) } });
+  const data = await res.json().catch(()=> ({}));
+  if (!res.ok) throw new Error(data.message || data.error || res.status);
+  return data;
+}
+
+$('loginBtn').addEventListener('click', async () => {
+  token = $('token').value.trim();
+  try {
+    const { tenants: ts } = await api('/api/admin/tenants');
+    tenants = ts;
+    $('login').classList.add('hide'); $('app').classList.remove('hide');
+    renderTenants();
+  } catch (e) { alert('접속 실패: ' + e.message); }
+});
+
+function renderTenants() {
+  $('tenantSel').innerHTML = tenants.map(t => `<option value="${t.key}">${t.name} (${t.key})</option>`).join('');
+  selectTenant(tenants[0]?.key);
+}
+$('tenantSel').addEventListener('change', () => selectTenant($('tenantSel').value));
+
+function selectTenant(key) {
+  cur = tenants.find(t => t.key === key);
+  if (!cur) return;
+  $('bookUrl').textContent = `${location.origin}/book/${cur.key}`;
+  $('hookUrl').textContent = `${location.origin}/webhooks/voice/${cur.key}`;
+  render();
+}
+
+document.querySelectorAll('.tab').forEach(el =>
+  el.addEventListener('click', () => {
+    tab = el.dataset.t;
+    document.querySelectorAll('.tab').forEach(x => x.classList.toggle('sel', x===el));
+    render();
+  }));
+
+$('newBtn').addEventListener('click', async () => {
+  const name = prompt('새 업체 이름:'); if (!name) return;
+  const key = prompt('URL 키 (영문/숫자, 예: kim-roof):') || undefined;
+  try {
+    const { tenant } = await api('/api/admin/tenants', { method:'POST', body: JSON.stringify({ name, key }) });
+    tenants.push(tenant); renderTenants(); $('tenantSel').value = tenant.key; selectTenant(tenant.key);
+  } catch (e) { alert('생성 실패: ' + e.message); }
+});
+
+async function render() {
+  const p = $('panel');
+  p.innerHTML = '<p class="muted">불러오는 중…</p>';
+  try {
+    if (tab === 'bookings') {
+      const { bookings } = await api(`/api/admin/${cur.key}/bookings`);
+      p.innerHTML = table(bookings, ['slot_start','name','phone','service','notes'],
+        ['일시','이름','연락처','상담','요청사항'], '예약이 없습니다.');
+    } else if (tab === 'leads') {
+      const { leads } = await api(`/api/admin/${cur.key}/leads`);
+      p.innerHTML = table(leads.map(l => ({...l, status: statusPill(l.status)})),
+        ['created_at','caller_number','status'], ['수신시각','발신번호','상태'], '부재중 기록이 없습니다.', true);
+    } else if (tab === 'messages') {
+      const { messages } = await api(`/api/admin/${cur.key}/messages`);
+      p.innerHTML = table(messages, ['created_at','to_number','provider','status','body'],
+        ['시각','수신번호','채널','상태','내용'], '발송 문자가 없습니다.');
+    } else if (tab === 'settings') {
+      renderSettings(p);
+    }
+  } catch (e) { p.innerHTML = `<p class="muted">오류: ${e.message}</p>`; }
+}
+
+function statusPill(s) {
+  const map = { missed:'부재중', texted:'문자발송', booked:'예약완료' };
+  return `<span class="pill">${map[s]||s}</span>`;
+}
+function esc(v){ return String(v==null?'':v).replace(/[<>&]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
+function table(rows, cols, heads, empty, html=false) {
+  if (!rows.length) return `<p class="muted">${empty}</p>`;
+  const th = heads.map(h=>`<th>${h}</th>`).join('');
+  const tr = rows.map(r => '<tr>' + cols.map(c => `<td>${html && c==='status' ? r[c] : esc(r[c])}</td>`).join('') + '</tr>').join('');
+  return `<table><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table>`;
+}
+
+async function renderSettings(p) {
+  const { tenant } = await api(`/api/admin/tenants/${cur.key}`);
+  const h = tenant.business_hours;
+  const days = [['mon','월'],['tue','화'],['wed','수'],['thu','목'],['fri','금'],['sat','토'],['sun','일']];
+  p.innerHTML = `
+    <label>업체명</label><input id="s_name" value="${esc(tenant.name)}" />
+    <label>사장님 알림 번호 (owner_phone)</label><input id="s_owner" value="${esc(tenant.owner_phone||'')}" placeholder="+8210..." />
+    <div class="row">
+      <div style="flex:1"><label>슬롯 길이(분)</label><input id="s_slot" type="number" value="${tenant.slot_minutes}" /></div>
+      <div style="flex:2"><label>타임존</label><input id="s_tz" value="${esc(tenant.timezone)}" /></div>
+    </div>
+    <label>상담 항목 (쉼표로 구분)</label><input id="s_svc" value="${esc(tenant.services.join(', '))}" />
+    <label>자동 문자 템플릿 <span class="muted">— {business}, {link} 사용 가능</span></label>
+    <textarea id="s_tpl" rows="4">${esc(tenant.sms_template)}</textarea>
+    <label>영업시간</label>
+    <div id="hours"></div>
+    <div class="row" style="margin-top:16px">
+      <button id="saveBtn" style="flex:0 0 auto">저장</button>
+      <span id="saveMsg" class="muted" style="align-self:center"></span>
+    </div>`;
+  $('hours').innerHTML = days.map(([k,ko]) => {
+    const v = h[k]; const on = !!v;
+    return `<div class="row" style="align-items:center;margin:4px 0">
+      <label style="flex:0 0 40px;margin:0"><input type="checkbox" data-day="${k}" ${on?'checked':''} style="width:auto"> ${ko}</label>
+      <input data-open="${k}" value="${on?v[0]:'09:00'}" style="flex:1" ${on?'':'disabled'} />
+      <span style="flex:0 0 auto">~</span>
+      <input data-close="${k}" value="${on?v[1]:'18:00'}" style="flex:1" ${on?'':'disabled'} />
+    </div>`;
+  }).join('');
+  $('hours').querySelectorAll('input[type=checkbox]').forEach(cb =>
+    cb.addEventListener('change', () => {
+      const k = cb.dataset.day;
+      $('hours').querySelector(`[data-open="${k}"]`).disabled = !cb.checked;
+      $('hours').querySelector(`[data-close="${k}"]`).disabled = !cb.checked;
+    }));
+  $('saveBtn').addEventListener('click', async () => {
+    const business_hours = {};
+    days.forEach(([k]) => {
+      const cb = $('hours').querySelector(`input[data-day="${k}"]`);
+      business_hours[k] = cb.checked
+        ? [$('hours').querySelector(`[data-open="${k}"]`).value, $('hours').querySelector(`[data-close="${k}"]`).value]
+        : null;
+    });
+    const patch = {
+      name: $('s_name').value, owner_phone: $('s_owner').value,
+      slot_minutes: Number($('s_slot').value), timezone: $('s_tz').value,
+      services: $('s_svc').value.split(',').map(s=>s.trim()).filter(Boolean),
+      sms_template: $('s_tpl').value, business_hours,
+    };
+    try {
+      const { tenant: t } = await api(`/api/admin/tenants/${cur.key}`, { method:'PUT', body: JSON.stringify(patch) });
+      const i = tenants.findIndex(x=>x.key===cur.key); tenants[i]=t; cur=t;
+      $('saveMsg').textContent = '✅ 저장되었습니다';
+      setTimeout(()=> $('saveMsg').textContent='', 2500);
+    } catch (e) { $('saveMsg').textContent = '오류: ' + e.message; }
+  });
+}
+</script>
+</body>
+</html>
