@@ -141,7 +141,7 @@ $('submit').addEventListener('click', async () => {
         slot_start: selSlot, notes: $('notes').value }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || '실패');
+    if (!res.ok) throw new Error(data.message || data.error || '실패');
     $('form').style.display='none';
     $('done').style.display='block';
     $('doneMsg').textContent = `${selSlot} · ${tenant.name}`;
