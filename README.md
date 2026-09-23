@@ -231,7 +231,14 @@ npx wrangler deploy
 # → https://ars-worker.<subdomain>.workers.dev
 ```
 
-**1-대안) wrangler 없이 대시보드로 배포**
+**1-대안 A) Workers Builds (GitHub 저장소 연결 · CI 자동 배포)**
+대시보드에서 저장소를 연결하면 CI가 저장소 **루트**에서 `npx wrangler deploy`를 실행합니다.
+이를 위해 루트에 `wrangler.toml`(entry = `worker/src/index.mjs`)이 포함되어 있습니다.
+1. **Create an app** 화면 — Build command 는 비움, Deploy command 는 `npx wrangler deploy` 그대로, **Preview builds 토글은 끄기**(구버전 `wrangler preview` 오류 방지) → **Deploy**.
+2. 첫 배포 후 Worker → **Settings → Variables and Secrets** 에 `GH_TOKEN`(Secret), `GH_REPO`(Text), `ALLOW_ORIGIN`(Text, 선택) 추가.
+3. 이후 `main` 에 푸시할 때마다 자동 재배포됩니다.
+
+**1-대안 B) wrangler 없이 대시보드 코드 편집기로 붙여넣기**
 `wrangler`는 CLI라 대시보드에는 없습니다. 대신 브라우저만으로 배포하려면:
 1. <https://dash.cloudflare.com> → **Workers & Pages → Create → Create Worker** → 이름 지정 → Deploy.
 2. **Edit code** 로 들어가 `worker/dist/index.js`(모든 import가 합쳐진 단일 파일) 전체를 붙여넣고 **Deploy**.

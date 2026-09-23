@@ -1,0 +1,16 @@
+# Root Worker config so Cloudflare "Workers Builds" (Git-connected CI) and
+# `npx wrangler deploy` run from the repo root find the entry point.
+# The entry imports config/, scripts/lib/, and src/ — wrangler bundles them.
+#
+# After the first deploy, add these in the Worker's
+# Settings → Variables and Secrets:
+#   GH_TOKEN  (Secret) — fine-grained PAT: Issues=RW, Contents=RW
+#   GH_REPO   (Text)   — e.g. jeonck/ars   (use a PRIVATE repo for real PII)
+#   ALLOW_ORIGIN (Text, optional) — e.g. https://jeonck.github.io
+
+name = "ars-worker"
+main = "worker/src/index.mjs"
+compatibility_date = "2025-01-01"
+
+[vars]
+ALLOW_ORIGIN = "*"
