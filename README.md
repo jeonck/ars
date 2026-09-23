@@ -231,6 +231,17 @@ npx wrangler deploy
 # → https://ars-worker.<subdomain>.workers.dev
 ```
 
+**1-대안) wrangler 없이 대시보드로 배포**
+`wrangler`는 CLI라 대시보드에는 없습니다. 대신 브라우저만으로 배포하려면:
+1. <https://dash.cloudflare.com> → **Workers & Pages → Create → Create Worker** → 이름 지정 → Deploy.
+2. **Edit code** 로 들어가 `worker/dist/index.js`(모든 import가 합쳐진 단일 파일) 전체를 붙여넣고 **Deploy**.
+3. Worker → **Settings → Variables and Secrets** 에서 추가:
+   - `GH_TOKEN` (Secret) — fine-grained PAT: Issues=RW, Contents=RW
+   - `GH_REPO` (Text) — `jeonck/ars`
+   - `ALLOW_ORIGIN` (Text, 선택) — `https://jeonck.github.io`
+4. 발급된 `https://<worker>.workers.dev` 주소를 사용합니다.
+> 참고: 대시보드 편집기는 단일 파일만 받으므로 `worker/src/index.mjs`(여러 파일 import)가 아니라 반드시 **`worker/dist/index.js`** 를 붙여넣으세요. 두 파일은 같은 동작이며 테스트로 동기화가 보장됩니다.
+
 **2) GitHub Pages 배포** (`site/`)
 - `site/config.js` 의 `window.ARS_WORKER` 를 위 Worker URL로 수정 → 커밋/푸시.
 - 저장소 **Settings → Pages → Source = "GitHub Actions"** 한 번 설정.
