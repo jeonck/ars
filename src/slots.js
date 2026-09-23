@@ -1,43 +1,22 @@
 import { bookedSlotsForDate } from './db.js';
 import { pad, dayKey, nowInTz, addHoursLocal, slotEndFor } from './time.js';
+import { computeSlots } from './slotcalc.js';
 
 // Re-exported so existing importers can keep getting these from ./slots.js.
 export { dayKey, nowInTz, addHoursLocal, slotEndFor };
-
-function toMinutes(hhmm) {
-  const [h, m] = hhmm.split(':').map(Number);
-  return h * 60 + m;
-}
 
 /**
  * Available slots for a tenant on a given date.
  * Returns [{ start, end, label }] excluding booked and past slots.
  */
 export function availableSlots(tenant, dateStr) {
-  const hours = tenant.business_hours[dayKey(dateStr)];
-  if (!hours) return []; // closed that day
-
-  const [openMin, closeMin] = [toMinutes(hours[0]), toMinutes(hours[1])];
-  const step = tenant.slot_minutes;
-  const booked = new Set(bookedSlotsForDate(tenant.id, dateStr));
-  const nowLocal = nowInTz(tenant.timezone);
-
-  const slots = [];
-  for (let m = openMin; m + step <= closeMin; m += step) {
-    const startH = pad(Math.floor(m / 60));
-    const startM = pad(m % 60);
-    const endTot = m + step;
-    const endH = pad(Math.floor(endTot / 60));
-    const endM = pad(endTot % 60);
-    const start = `${dateStr} ${startH}:${startM}`;
-    const end = `${dateStr} ${endH}:${endM}`;
-
-    if (booked.has(start)) continue;
-    if (start <= nowLocal) continue; // in the past
-
-    slots.push({ start, end, label: `${startH}:${startM}–${endH}:${endM}` });
-  }
-  return slots;
+  return computeSlots({
+    hours: tenant.business_hours[dayKey(dateStr)],
+    slotMinutes: tenant.slot_minutes,
+    dateStr,
+    booked: new Set(bookedSlotsForDate(tenant.id, dateStr)),
+    nowLocal: nowInTz(tenant.timezone),
+  });
 }
 
 // Validate that a proposed slot_start is genuinely bookable right now.

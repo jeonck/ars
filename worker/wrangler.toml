@@ -1,0 +1,21 @@
+# Cloudflare Worker config for the ARS telephony/booking front door.
+#
+# Deploy:
+#   cd worker
+#   npx wrangler login
+#   npx wrangler secret put GH_TOKEN     # fine-grained PAT: Issues RW + Contents RW (for repository_dispatch)
+#   npx wrangler secret put GH_REPO      # e.g. jeonck/ars   (use a PRIVATE repo for real PII)
+#   npx wrangler deploy
+#
+# The deployed URL (https://ars-worker.<your-subdomain>.workers.dev) goes into:
+#   - site/config.js  (window.ARS_WORKER)
+#   - Twilio number's Voice status callback:  POST <url>/twilio/voice/demo
+#   - Twilio number's Messaging webhook:      POST <url>/twilio/sms/demo
+
+name = "ars-worker"
+main = "src/index.mjs"
+compatibility_date = "2025-01-01"
+
+[vars]
+# Lock this to your Pages origin in production, e.g. "https://jeonck.github.io"
+ALLOW_ORIGIN = "*"

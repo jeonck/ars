@@ -196,7 +196,9 @@ scripts/lib/issueops.mjs      순수 처리 로직(파싱·플랜) — 단위 �
 scripts/issue-ops.mjs         이슈 이벤트 처리(문자 발송 + 라벨 + 코멘트)
 scripts/reminders-gh.mjs      확정 예약 스캔 후 리마인더 발송
 scripts/create-missed-call.mjs  repository_dispatch → 부재중 이슈 생성
-.github/workflows/            issue-ops.yml (on: issues), reminders.yml (on: schedule)
+worker/                       Cloudflare Worker(전화 수신 + 예약 API) + wrangler.toml
+site/                         GitHub Pages 정적 예약 페이지(Worker와 통신)
+.github/workflows/            issue-ops.yml (on: issues), reminders.yml (on: schedule), pages.yml (Pages 배포)
 ```
 
 ### 흐름
@@ -208,6 +210,40 @@ scripts/create-missed-call.mjs  repository_dispatch → 부재중 이슈 생성
 - **문자 실발송** — 저장소 Secrets에 `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/`TWILIO_FROM` 등록(없으면 mock: Actions 로그·코멘트에만 기록).
 - **예약 페이지** — `public/book.html`을 GitHub Pages로 배포하고 `config/tenants.json`의 `pages_base_url` 갱신.
 - **인증** — 처리에는 Actions 기본 `GITHUB_TOKEN` 사용(브라우저에 토큰 노출 금지).
+
+### 배포 런북 — "서버 0대 + 공개 URL"
+전화 수신은 **Cloudflare Worker**(무료 티어, 관리형)가, 예약 페이지는 **GitHub Pages**가 담당합니다.
+브라우저에는 토큰이 절대 노출되지 않습니다(모든 GitHub 쓰기는 Worker의 시크릿 토큰으로).
+
+```
+[Twilio] ──POST /twilio/voice/:key──▶ [Cloudflare Worker] ──repository_dispatch──▶ [GitHub Actions] ──▶ SMS + 이슈
+[고객 브라우저] ──/tenant·/slots·/book──▶ [Cloudflare Worker] ──GitHub API──▶ [GitHub Issues]
+[GitHub Pages] ── 정적 예약 페이지(site/) ── 고객에게 링크로 노출
+```
+
+**1) Cloudflare Worker 배포** (`worker/`)
+```bash
+cd worker
+npx wrangler login
+npx wrangler secret put GH_TOKEN   # fine-grained PAT: Issues=RW, Contents=RW(=repository_dispatch)
+npx wrangler secret put GH_REPO    # 예: jeonck/ars  (실운영은 private 저장소 권장)
+npx wrangler deploy
+# → https://ars-worker.<subdomain>.workers.dev
+```
+
+**2) GitHub Pages 배포** (`site/`)
+- `site/config.js` 의 `window.ARS_WORKER` 를 위 Worker URL로 수정 → 커밋/푸시.
+- 저장소 **Settings → Pages → Source = "GitHub Actions"** 한 번 설정.
+- `Deploy Pages` 워크플로가 `site/` 를 배포 → `https://<user>.github.io/<repo>/`.
+- `config/tenants.json` 의 `pages_base_url` 를 그 주소로 맞춤(부재중 문자 링크에 사용).
+
+**3) Twilio 연결**
+- 번호의 **Voice status callback** → `POST https://…workers.dev/twilio/voice/demo`
+- 번호의 **Messaging webhook** → `POST https://…workers.dev/twilio/sms/demo`
+- Actions Secrets 에 `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/`TWILIO_FROM` 등록(문자 실발송).
+
+> 제약: Worker/Pages **배포 명령 자체는 각자의 계정 로그인**이 필요합니다(코드·설정·런북은 저장소에 준비됨).
+> Twilio 서명 검증은 다음 단계 권장 항목입니다(현재 Worker는 미검증 — public 데모 기준).
 
 ### 로컬 dry-run (네트워크 없이 처리 미리보기)
 ```bash

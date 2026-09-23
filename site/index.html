@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>상담 예약</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --line:#262a33; --fg:#e8eaed; --muted:#9aa0ab;
+    --accent:#4f8cff; --ok:#35c07f; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    background:var(--bg); color:var(--fg); }
+  .wrap { max-width:560px; margin:0 auto; padding:28px 18px 70px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:14px; margin-bottom:20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; margin-bottom:16px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:12px 0 6px; }
+  input, select, textarea { width:100%; background:#12151b; border:1px solid var(--line); color:var(--fg);
+    border-radius:9px; padding:11px 12px; font-size:15px; }
+  .slots { display:grid; grid-template-columns:repeat(auto-fill,minmax(92px,1fr)); gap:8px; margin-top:6px; }
+  .slot { text-align:center; padding:10px 6px; border:1px solid var(--line); border-radius:9px;
+    background:#12151b; cursor:pointer; font-size:14px; }
+  .slot.sel { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  .slot.none { grid-column:1/-1; color:var(--muted); text-align:center; border:0; cursor:default; }
+  button { width:100%; background:var(--accent); color:#fff; border:0; border-radius:10px;
+    padding:14px; font-size:16px; font-weight:600; cursor:pointer; margin-top:18px; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .ok { text-align:center; padding:24px; }
+  .ok .check { font-size:44px; }
+  .err { color:#ff6b6b; font-size:14px; margin-top:10px; }
+  .chips { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; }
+  .chip { white-space:nowrap; padding:9px 14px; border:1px solid var(--line); border-radius:999px;
+    background:#12151b; cursor:pointer; font-size:14px; }
+  .chip.sel { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .tag { display:inline-block; font-size:12px; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:3px 10px; margin-bottom:10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="tag">GitHub Pages · 서버리스</div>
+  <h1 id="biz">상담 예약</h1>
+  <div class="sub" id="sub">가능하신 시간을 선택해 주세요.</div>
+
+  <div id="form">
+    <div class="card">
+      <label>날짜</label>
+      <div id="dates" class="chips"></div>
+      <label style="margin-top:16px">시간</label>
+      <div id="slots" class="slots"><div class="slot none">날짜를 선택하세요</div></div>
+    </div>
+    <div class="card">
+      <label>이름 *</label>
+      <input id="name" placeholder="홍길동" />
+      <label>연락처 *</label>
+      <input id="phone" placeholder="010-1234-5678" />
+      <label id="svcLabel" style="display:none">상담 항목</label>
+      <select id="service" style="display:none"></select>
+      <label>요청사항 (선택)</label>
+      <textarea id="notes" rows="2" placeholder="예: 지붕 누수가 심합니다"></textarea>
+      <div id="err" class="err"></div>
+      <button id="submit" disabled>예약 확정하기</button>
+    </div>
+  </div>
+
+  <div id="done" class="card ok" style="display:none">
+    <div class="check">✅</div>
+    <h2>예약이 접수되었습니다</h2>
+    <p id="doneMsg" class="sub"></p>
+    <p class="sub">확인 문자를 보내드립니다.</p>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const W = (window.ARS_WORKER || '').replace(/\/+$/, '');
+const key = new URLSearchParams(location.search).get('key') || 'demo';
+let tenant = null, selDate = null, selSlot = null;
+
+async function init() {
+  if (!W || W.includes('example.workers.dev')) {
+    $('biz').textContent = '설정 필요';
+    $('sub').textContent = 'site/config.js 의 ARS_WORKER 를 배포한 Worker URL로 설정하세요.';
+    $('form').style.display = 'none';
+    return;
+  }
+  try {
+    tenant = await (await fetch(`${W}/tenant?key=${encodeURIComponent(key)}`)).json();
+  } catch { $('biz').textContent = '연결 오류'; $('form').style.display='none'; return; }
+  if (tenant.error) { $('biz').textContent = '업체를 찾을 수 없습니다'; $('form').style.display='none'; return; }
+
+  $('biz').textContent = `${tenant.name} · 상담 예약`;
+  if (tenant.services && tenant.services.length) {
+    $('svcLabel').style.display='block'; $('service').style.display='block';
+    $('service').innerHTML = tenant.services.map((s) => `<option>${s}</option>`).join('');
+  }
+  const { dates } = await (await fetch(`${W}/open-dates?key=${encodeURIComponent(key)}`)).json();
+  $('dates').innerHTML = dates.map((d) => `<div class="chip" data-d="${d}">${fmtDate(d)}</div>`).join('')
+    || '<span class="sub">예약 가능한 날짜가 없습니다.</span>';
+  $('dates').querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => selectDate(c.dataset.d)));
+  if (dates[0]) selectDate(dates[0]);
+}
+
+function fmtDate(d) {
+  const [y, m, day] = d.split('-').map(Number);
+  const dow = ['일','월','화','수','목','금','토'][new Date(Date.UTC(y, m-1, day)).getUTCDay()];
+  return `${m}/${day}(${dow})`;
+}
+
+async function selectDate(d) {
+  selDate = d; selSlot = null; refresh();
+  $('dates').querySelectorAll('.chip').forEach((c) => c.classList.toggle('sel', c.dataset.d===d));
+  $('slots').innerHTML = '<div class="slot none">불러오는 중…</div>';
+  const { slots } = await (await fetch(`${W}/slots?key=${encodeURIComponent(key)}&date=${d}`)).json();
+  if (!slots.length) { $('slots').innerHTML = '<div class="slot none">이 날은 예약 가능한 시간이 없습니다</div>'; return; }
+  $('slots').innerHTML = slots.map((s) => `<div class="slot" data-s="${s.start}">${s.label.split('–')[0]}</div>`).join('');
+  $('slots').querySelectorAll('.slot').forEach((el) => el.addEventListener('click', () => {
+    selSlot = el.dataset.s;
+    $('slots').querySelectorAll('.slot').forEach((x) => x.classList.remove('sel'));
+    el.classList.add('sel'); refresh();
+  }));
+}
+
+function refresh() { $('submit').disabled = !(selSlot && $('name').value.trim() && $('phone').value.trim()); }
+['name','phone'].forEach((id) => $(id).addEventListener('input', refresh));
+
+$('submit').addEventListener('click', async () => {
+  $('err').textContent=''; $('submit').disabled=true; $('submit').textContent='예약 중…';
+  try {
+    const res = await fetch(`${W}/book`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ key, name:$('name').value, phone:$('phone').value,
+        service: tenant.services && tenant.services.length ? $('service').value : null,
+        slot_start: selSlot, notes: $('notes').value }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '실패');
+    $('form').style.display='none';
+    $('done').style.display='block';
+    $('doneMsg').textContent = `${selSlot} · ${tenant.name}`;
+  } catch (e) {
+    $('err').textContent = '오류: ' + e.message;
+    if (selDate) selectDate(selDate);
+  } finally { $('submit').textContent='예약 확정하기'; refresh(); }
+});
+
+init();
+</script>
+</body>
+</html>

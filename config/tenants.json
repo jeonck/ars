@@ -7,6 +7,16 @@
     "services": ["지붕 누수 점검", "지붕 교체 견적", "방수 시공 상담"],
     "sms_template": "[{business}] 방금 전화를 받지 못해 죄송합니다. 현장 작업 중이라 통화가 어려웠습니다. 아래 링크에서 편하신 상담 시간을 예약해 주세요:\n{link}",
     "reminder_hours": 3,
-    "pages_base_url": "https://jeonck.github.io/ars/book.html"
+    "slot_minutes": 30,
+    "business_hours": {
+      "mon": ["09:00", "18:00"],
+      "tue": ["09:00", "18:00"],
+      "wed": ["09:00", "18:00"],
+      "thu": ["09:00", "18:00"],
+      "fri": ["09:00", "18:00"],
+      "sat": ["10:00", "14:00"],
+      "sun": null
+    },
+    "pages_base_url": "https://jeonck.github.io/ars/"
   }
 }
