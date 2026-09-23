@@ -12,5 +12,9 @@ name = "ars-worker"
 main = "worker/src/index.mjs"
 compatibility_date = "2025-01-01"
 
+# Non-secret vars live here so each `wrangler deploy` (Workers Builds) keeps
+# them — dashboard-set plain vars not in this file get wiped on deploy.
+# GH_TOKEN is a SECRET: set it in the dashboard / `wrangler secret put`, never here.
 [vars]
-ALLOW_ORIGIN = "*"
+GH_REPO = "jeonck/ars"
+ALLOW_ORIGIN = "https://jeonck.github.io"
