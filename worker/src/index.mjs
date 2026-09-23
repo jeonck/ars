@@ -83,12 +83,23 @@ async function bookedSet(env, tenantKey, dateStr) {
 }
 
 export async function handleRequest(request, env) {
+ try {
   const url = new URL(request.url);
   const { pathname, searchParams } = url;
 
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(env) });
 
   const tenantFor = (key) => tenants[key] || tenants.demo;
+
+  // Diagnostic: verify GitHub token/repo wiring.
+  if (request.method === 'GET' && pathname === '/health') {
+    const out = { worker: 'ok', gh_repo: env.GH_REPO || null, gh_token: env.GH_TOKEN ? 'set' : 'missing' };
+    try {
+      await gh(env, `/repos/${env.GH_REPO}/issues?state=open&per_page=1`);
+      out.github = 'ok';
+    } catch (e) { out.github = 'error'; out.message = String(e.message || e); }
+    return json(env, out);
+  }
 
   // ── public read APIs ───────────────────────────────────
   if (request.method === 'GET' && pathname === '/tenant') {
@@ -108,7 +119,9 @@ export async function handleRequest(request, env) {
     const date = searchParams.get('date') || '';
     if (!t) return json(env, { error: 'not_found' }, 404);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json(env, { error: 'bad_date' }, 400);
-    const booked = await bookedSet(env, t.key, date);
+    // Don't hang the page if the GitHub list fails — fall back to no bookings.
+    let booked = new Set();
+    try { booked = await bookedSet(env, t.key, date); } catch (e) { console.error('slots bookedSet failed:', e.message); }
     const slots = computeSlots({
       hours: t.business_hours[dayKey(date)],
       slotMinutes: t.slot_minutes,
@@ -182,6 +195,9 @@ export async function handleRequest(request, env) {
   }
 
   return json(env, { error: 'not_found' }, 404);
+ } catch (err) {
+  return json(env, { error: 'server_error', message: String(err?.message || err) }, 500);
+ }
 }
 
 export default {

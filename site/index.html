@@ -111,14 +111,21 @@ async function selectDate(d) {
   selDate = d; selSlot = null; refresh();
   $('dates').querySelectorAll('.chip').forEach((c) => c.classList.toggle('sel', c.dataset.d===d));
   $('slots').innerHTML = '<div class="slot none">불러오는 중…</div>';
-  const { slots } = await (await fetch(`${W}/slots?key=${encodeURIComponent(key)}&date=${d}`)).json();
-  if (!slots.length) { $('slots').innerHTML = '<div class="slot none">이 날은 예약 가능한 시간이 없습니다</div>'; return; }
-  $('slots').innerHTML = slots.map((s) => `<div class="slot" data-s="${s.start}">${s.label.split('–')[0]}</div>`).join('');
-  $('slots').querySelectorAll('.slot').forEach((el) => el.addEventListener('click', () => {
-    selSlot = el.dataset.s;
-    $('slots').querySelectorAll('.slot').forEach((x) => x.classList.remove('sel'));
-    el.classList.add('sel'); refresh();
-  }));
+  try {
+    const res = await fetch(`${W}/slots?key=${encodeURIComponent(key)}&date=${d}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+    const slots = data.slots || [];
+    if (!slots.length) { $('slots').innerHTML = '<div class="slot none">이 날은 예약 가능한 시간이 없습니다</div>'; return; }
+    $('slots').innerHTML = slots.map((s) => `<div class="slot" data-s="${s.start}">${s.label.split('–')[0]}</div>`).join('');
+    $('slots').querySelectorAll('.slot').forEach((el) => el.addEventListener('click', () => {
+      selSlot = el.dataset.s;
+      $('slots').querySelectorAll('.slot').forEach((x) => x.classList.remove('sel'));
+      el.classList.add('sel'); refresh();
+    }));
+  } catch (e) {
+    $('slots').innerHTML = `<div class="slot none">시간을 불러오지 못했습니다: ${e.message}</div>`;
+  }
 }
 
 function refresh() { $('submit').disabled = !(selSlot && $('name').value.trim() && $('phone').value.trim()); }
